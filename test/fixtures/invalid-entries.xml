@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.example.com/ok</loc><lastmod>2026-11-01</lastmod></url>
+  <url><loc>https://www.example.com/ok</loc></url>
+  <url><loc>http://www.example.com/insecure</loc></url>
+  <url><loc>https://example.com/no-www</loc></url>
+  <url><loc>https://www.example.com/bad-date</loc><lastmod>2026-11-01 10:00:00</lastmod></url>
+  <url><loc>https://www.example.com/future</loc><lastmod>2030-01-01</lastmod></url>
+  <url><loc>https://www.example.com/bad-freq</loc><changefreq>sometimes</changefreq><priority>1.5</priority></url>
+  <url><loc>/relative/path</loc></url>
+  <url><loc>https://www.example.com/with space</loc></url>
+  <url><loc>https://www.example.com/frag#section</loc></url>
+  <url><loc>https://www.example.com/ok/</loc></url>
+</urlset>

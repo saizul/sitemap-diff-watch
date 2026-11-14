@@ -1,0 +1,16 @@
+# robots.txt for www.example.com
+User-agent: *
+Disallow: /private/
+Disallow: /*.pdf$
+Allow: /private/public-report
+
+User-agent: Googlebot
+User-agent: Bingbot
+Disallow: /search
+Allow: /search/about
+
+User-agent: BadBot
+Disallow: /
+
+Sitemap: https://www.example.com/sitemap_index.xml
+Sitemap: https://www.example.com/news-sitemap.xml

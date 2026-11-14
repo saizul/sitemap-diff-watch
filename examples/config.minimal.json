@@ -1,0 +1,3 @@
+{
+  "sites": [{ "name": "example", "sitemaps": ["https://www.example.com/sitemap.xml"] }]
+}

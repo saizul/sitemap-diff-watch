@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset>
+  <url>
+    <loc>https://www.example.com/gallery</loc>
+    <image:image><image:loc>https://www.example.com/a.jpg</image:loc></image:image>
+  </url>
+  <url>
+    <lastmod>2026-01-01</lastmod>
+  </url>
+</urlset>

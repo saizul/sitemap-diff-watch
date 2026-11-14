@@ -1,0 +1,74 @@
+{
+  "name": "sitemap-diff-watch",
+  "version": "0.1.0",
+  "description": "Monitor XML sitemaps over time: recursive index fetching, streaming parse, snapshots in gzip JSON or SQLite, diffs, section growth, URL pattern clusters, publishing velocity, validation, reports and alerts.",
+  "keywords": [
+    "sitemap",
+    "xml-sitemap",
+    "seo",
+    "technical-seo",
+    "sitemap-index",
+    "robots-txt",
+    "hreflang",
+    "competitor-monitoring",
+    "diff",
+    "typescript"
+  ],
+  "author": "Saizul Amin (https://github.com/saizul)",
+  "license": "MIT",
+  "homepage": "https://github.com/saizul/sitemap-diff-watch#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saizul/sitemap-diff-watch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/saizul/sitemap-diff-watch/issues"
+  },
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/src/index.d.ts",
+        "default": "./dist/src/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "sitemap-diff-watch": "./dist/src/cli.js"
+  },
+  "files": [
+    "dist/src",
+    "dist/cjs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "examples/config.example.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . && npm run typecheck",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "prepublishOnly": "npm run lint && npm test",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.10.0",
+    "eslint": "^10.0.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.0"
+  }
+}

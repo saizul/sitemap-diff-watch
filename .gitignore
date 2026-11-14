@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+*.tgz
+*.log
+.env
+.env.*
+!.env.example
+# Local snapshot stores and reports (relative to the config file). The GitHub
+# Actions example commits them on purpose in a repository of your own.
+snapshots/
+reports/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+.DS_Store
+.idea/
+.vscode/

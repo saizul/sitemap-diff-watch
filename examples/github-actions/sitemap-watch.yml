@@ -1,0 +1,56 @@
+# Copy to .github/workflows/sitemap-watch.yml in a repository of your own (for example
+# "sitemap-watch"), together with a watch.json config (see examples/config.example.json).
+#
+# Every day it fetches the sitemaps, stores a snapshot under snapshots/, writes reports
+# under reports/, sends alerts and commits the new files, so the history lives in git.
+# Add SLACK_WEBHOOK_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, ALERT_WEBHOOK_URL or
+# ALERT_WEBHOOK_SECRET as repository secrets for the channels you use.
+name: Sitemap watch
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # daily at 03:17 UTC; pick an odd minute to avoid the busy hour
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sitemap-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # From npm once published there; until then install from GitHub Packages
+      # (see the README) or from a git tag:
+      - run: npm install --no-save github:saizul/sitemap-diff-watch#v0.1.0
+
+      - name: Run the watch
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WEBHOOK_SECRET: ${{ secrets.ALERT_WEBHOOK_SECRET }}
+        run: npx sitemap-diff-watch watch --config watch.json
+
+      - name: Commit snapshots and reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add snapshots reports
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Sitemap snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
