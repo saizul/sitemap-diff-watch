@@ -19,6 +19,9 @@ export { discoverSitemaps, COMMON_SITEMAP_PATHS, type DiscoveryResult } from './
 export { parseRobotsTxt, isAllowed, matchPattern, rulesFor, productToken, pathForMatching, ROBOTS_MAX_BYTES, type RobotsTxt, type RobotsRule, type RobotsGroup, type RobotsDecision } from './robots/robots.js';
 export { fetchRobotsTxt, RobotsCache, type RobotsFetchResult, type RobotsStatus } from './robots/fetch-robots.js';
 
+// URL scope filters
+export { compileUrlFilter, compileUrlPattern, filterCrawl, filterSnapshot, filterKey, FilterError, type UrlFilter, type UrlFilterSpec, type SnapshotFilterInfo } from './filter/url-filter.js';
+
 // Snapshots
 export * from './snapshot/index.js';
 

@@ -38,6 +38,7 @@ chart are all built in. It ships as both ES modules and CommonJS.
 - [Quick start](#quick-start)
 - [CLI](#cli)
 - [Configuration](#configuration)
+- [URL scope filters](#url-scope-filters)
 - [What the diff contains](#what-the-diff-contains)
 - [Validation rules](#validation-rules)
 - [Reports](#reports)
@@ -70,6 +71,9 @@ chart are all built in. It ships as both ES modules and CommonJS.
   (`xhtml:link rel="alternate"`)
 - **Protocol limits** warned about: more than 50,000 URLs or 50,000 sitemaps, more than 50 MB uncompressed, more than
   1,000 news entries, nested indexes, child sitemaps on another host, wrong or missing namespace, non-UTF-8
+- **URL scope filters**: `include` / `exclude` patterns (path, host or URL globs, or regular expressions) keep a
+  watch on the part of a site you care about, and `excludeSitemaps` skips whole child sitemaps without downloading
+  them; changing the scope later does not read as a mass removal
 - **Snapshots** in gzip-compressed JSON files (good for committing to git) or in one SQLite file through
   `node:sqlite`, with automatic fallback to JSON on Node.js versions without it, and retention pruning
 - **Diffs**: added and removed URLs, lastmod changes (compared as instants, so `+06:00` and `Z` forms of the same
@@ -175,6 +179,10 @@ Common options: `--store <dir|file.sqlite>` (default `./snapshots`; a `.sqlite` 
 `--format md|json|html|rss`, `--output`/`-o <file>`, `--max-depth <n>`, `--user-agent <ua>` (also the product
 token for robots.txt matching), `--timeout <ms>`.
 
+Filter options for `fetch`, `snapshot`, `diff` and `validate`: `--include <pattern>` and `--exclude <pattern>` keep
+or drop URLs, `--exclude-sitemap <pattern>` skips child sitemaps (all repeatable; see
+[URL scope filters](#url-scope-filters)).
+
 Exit codes: `0` success, `1` failure or issues at the `--fail-on` level, `2` usage error.
 
 ## Configuration
@@ -197,7 +205,8 @@ warning, so the same file works locally without secrets.
   },
   "sites": [
     { "name": "my-site", "sitemaps": ["https://www.example.com/sitemap_index.xml"], "validate": { "canonicalHost": "www.example.com" } },
-    { "name": "competitor", "discover": "https://shop.example.net/", "sectionDepth": 2, "validate": { "enabled": false } }
+    { "name": "competitor", "discover": "https://shop.example.net/", "sectionDepth": 2, "validate": { "enabled": false },
+      "include": ["/blog/**"], "excludeSitemaps": ["/product-sitemap*.xml"] }
   ]
 }
 ```
@@ -228,8 +237,49 @@ warning, so the same file works locally without secrets.
 | `sites[].sitemaps` or `sites[].discover` | one required | Sitemap URLs, or a site URL whose robots.txt lists them |
 | `sites[].maxDepth` / `maxSitemaps` | `3` / `1000` | Index depth and document limit |
 | `sites[].sectionDepth` | `1` | Directory depth for section growth (`/blog/` vs `/blog/2026/`) |
+| `sites[].include` / `exclude` | none | Keep only URLs matching an `include` pattern and no `exclude` pattern |
+| `sites[].excludeSitemaps` | none | Child sitemaps matching these patterns are not downloaded |
 
 See [examples/config.example.json](examples/config.example.json) for every option.
+
+## URL scope filters
+
+Large sites mix content you want to follow with URLs you do not: a competitor's blog next to 200,000 product pages,
+or tag and pagination archives that change every day. Filters keep a site's snapshots, diffs, validation, reports
+and alerts to the URLs in scope.
+
+```json
+{
+  "name": "competitor-blog",
+  "discover": "https://shop.example.net/",
+  "include": ["/blog/**", "/guides/**"],
+  "exclude": ["/blog/tag/**", "/blog/page/*", "re:[?&]utm_"],
+  "excludeSitemaps": ["/product-sitemap*.xml", "re:/sitemap-products-\\d+\\.xml$"]
+}
+```
+
+A URL is kept when it matches at least one `include` pattern (or there are none) and no `exclude` pattern.
+`excludeSitemaps` is checked before a child sitemap of an index is downloaded, which saves the bandwidth; root
+sitemaps are always fetched.
+
+| Pattern | Matched against | Example matches |
+| --- | --- | --- |
+| `/blog/*` | path and query | `/blog/post`, `/blog/post?page=2`; not `/blog/2026/post` |
+| `/blog/**` | path and query | `/blog`, `/blog/`, `/blog/2026/11/post` |
+| `*.example.com/news/**` | host, path and query | `shop.example.com/news/a` |
+| `https://www.example.com/p/*` | the whole URL (any pattern with `://`) | `https://www.example.com/p/shoe` |
+| `re:/\d{4}/\d{2}/` | the whole URL, as a JavaScript regular expression (search, not full match) | `.../news/2026/11/story` |
+
+In globs `*` matches any characters except `/`, `**` matches anything, and a trailing `/**` also matches the
+directory itself. Every other character, `?` and `.` included, is literal, and the glob has to match the whole
+string. Hosts and schemes are compared lower-cased; paths are case-sensitive. Invalid patterns are reported when the
+config is loaded (or as a usage error on the command line) instead of halfway through a run.
+
+Each snapshot records its scope in `stats.filter` (`include`, `exclude` and the number of distinct URLs left out),
+and reports show it. When the scope changes, `watch` and `snapshot` apply the new filter to the older snapshots
+before diffing and print a warning, so narrowing the scope is not reported as removed URLs. Widening it still shows
+the newly included URLs as added once. `diff --include/--exclude` filters both snapshots, which also works on
+snapshots taken without a filter.
 
 ## What the diff contains
 

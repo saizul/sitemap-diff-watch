@@ -1,4 +1,5 @@
 import type { CrawledUrl, CrawlResult, SitemapInfo } from '../fetch/crawler.js';
+import { filterCrawl, type SnapshotFilterInfo, type UrlFilter } from '../filter/url-filter.js';
 import type { ParseWarning } from '../types.js';
 import { realClock, type ClockFn } from '../types.js';
 
@@ -21,6 +22,8 @@ export interface SnapshotStats {
   alternateCount: number;
   /** Uncompressed bytes downloaded. */
   bytes: number;
+  /** Present when an include/exclude filter was applied; the counts above are after filtering. */
+  filter?: SnapshotFilterInfo;
 }
 
 export interface SnapshotMeta {
@@ -71,8 +74,17 @@ export function computeStats(urls: SnapshotUrl[], sitemaps: SitemapInfo[]): Snap
   };
 }
 
+export interface CreateSnapshotOptions {
+  clock?: ClockFn;
+  id?: string;
+  /** Keep only URLs in this scope; the result is recorded in `stats.filter`. */
+  filter?: UrlFilter;
+}
+
 /** Turn a crawl into a snapshot. URLs are sorted so stored snapshots diff cleanly in git. */
-export function createSnapshot(site: string, crawl: CrawlResult, options: { clock?: ClockFn; id?: string } = {}): Snapshot {
+export function createSnapshot(site: string, input: CrawlResult, options: CreateSnapshotOptions = {}): Snapshot {
+  const filtered = options.filter?.active ? filterCrawl(input, options.filter) : undefined;
+  const crawl = filtered?.crawl ?? input;
   const time = Date.parse(crawl.finishedAt) || (options.clock ?? realClock)();
   const urls = [...crawl.urls].sort((a, b) => (a.loc < b.loc ? -1 : a.loc > b.loc ? 1 : a.sitemap < b.sitemap ? -1 : a.sitemap > b.sitemap ? 1 : 0));
   return {
@@ -85,7 +97,10 @@ export function createSnapshot(site: string, crawl: CrawlResult, options: { cloc
     sitemaps: crawl.sitemaps,
     urls,
     warnings: crawl.warnings,
-    stats: computeStats(urls, crawl.sitemaps),
+    stats: {
+      ...computeStats(urls, crawl.sitemaps),
+      ...(filtered && options.filter ? { filter: { include: options.filter.include, exclude: options.filter.exclude, excludedUrls: filtered.excludedUrls } } : {}),
+    },
   };
 }
 

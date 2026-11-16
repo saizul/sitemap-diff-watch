@@ -67,6 +67,10 @@ export function renderHtml(report: WatchReport, options: HtmlOptions = {}): stri
       report.previous ? ` compared with <code>${e(report.previous.id)}</code>, ${e(report.previous.createdAt)}` : ''
     }. Sitemaps: ${report.roots.map(a).join(', ')}</p>`,
   );
+  if (s.filter) {
+    const parts = [s.filter.include.length ? `include ${s.filter.include.map((p) => `<code>${e(p)}</code>`).join(', ')}` : '', s.filter.exclude.length ? `exclude ${s.filter.exclude.map((p) => `<code>${e(p)}</code>`).join(', ')}` : ''];
+    body.push(`<p class="muted">URL scope: ${parts.filter(Boolean).join('; ')}. ${formatNumber(s.filter.excludedUrls)} URLs out of scope.</p>`);
+  }
   const c = report.diff?.counts;
   const cards: Array<[string, string]> = [
     ['URLs', formatNumber(s.uniqueUrlCount)],

@@ -7,6 +7,7 @@ import { velocityFromHistory, velocityFromLastmod } from './diff/velocity.js';
 import { errorMessage, SitemapWatchError } from './errors.js';
 import { crawlSitemaps } from './fetch/crawler.js';
 import { discoverSitemaps } from './fetch/discover.js';
+import { compileUrlFilter, FilterError, filterKey, filterSnapshot, type UrlFilter } from './filter/url-filter.js';
 import type { HttpOptions } from './fetch/http.js';
 import { parseSitemapBuffer } from './parse/stream.js';
 import { renderHtml } from './report/html.js';
@@ -67,6 +68,11 @@ Common options:
   --format <md|json|html|rss>         Output format for diff and validate (default md)
   --output, -o <file>                 Write the output to a file instead of stdout
   --max-depth <n>                     Sitemap index depth to follow (default 3)
+  --include <pattern>                 Only keep matching URLs (repeatable; fetch, snapshot, diff, validate)
+  --exclude <pattern>                 Drop matching URLs (repeatable)
+  --exclude-sitemap <pattern>         Do not download matching child sitemaps (repeatable)
+                                      Patterns: /path/** (path glob), https://host/path/* (URL glob),
+                                      host/path/** (host glob) or re:<regex>
   --user-agent <ua>                   User-Agent for requests; product token for robots.txt
   --timeout <ms>                      Request timeout, body included (default 60000)
   --json                              Machine-readable output where supported
@@ -101,6 +107,9 @@ const OPTIONS = {
   config: { type: 'string', short: 'c' },
   'dry-run': { type: 'boolean' },
   'max-depth': { type: 'string' },
+  include: { type: 'string', multiple: true },
+  exclude: { type: 'string', multiple: true },
+  'exclude-sitemap': { type: 'string', multiple: true },
   'user-agent': { type: 'string' },
   timeout: { type: 'string' },
   json: { type: 'boolean' },
@@ -123,6 +132,23 @@ function httpFrom(values: Values, io: CliIo): HttpOptions {
     ...(values['user-agent'] ? { userAgent: values['user-agent'] } : {}),
     ...(timeout !== undefined ? { timeoutMs: timeout } : {}),
   };
+}
+
+function compileOption(spec: { include?: string[]; exclude?: string[] }, excludeName = 'exclude'): UrlFilter {
+  try {
+    return compileUrlFilter(spec);
+  } catch (error) {
+    if (!(error instanceof FilterError)) throw error;
+    // "include[1]: message" -> "--include (pattern 2): message"
+    const m = /^(include|exclude)\[(\d+)\]: (.*)$/s.exec(error.message);
+    if (!m) throw new UsageError(error.message);
+    throw new UsageError(`--${m[1] === 'include' ? 'include' : excludeName} (pattern ${Number(m[2]) + 1}): ${m[3]}`);
+  }
+}
+
+/** The URL filter from --include / --exclude. */
+function urlFilterFrom(values: Values): UrlFilter {
+  return compileOption({ ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
 }
 
 function storeConfig(path: string | undefined): { type: 'json' | 'sqlite'; path: string } {
@@ -218,7 +244,12 @@ async function cmdDiscover(args: string[], values: Values, io: CliIo): Promise<n
 async function crawlFromArgs(args: string[], values: Values, io: CliIo): Promise<Awaited<ReturnType<typeof crawlSitemaps>>> {
   if (!args.length) throw new UsageError('give at least one sitemap URL');
   const maxDepth = int(values['max-depth'], 'max-depth');
-  return crawlSitemaps(args, { http: httpFrom(values, io), ...(maxDepth !== undefined ? { maxDepth } : {}) });
+  const sitemapFilter = values['exclude-sitemap'] ? compileOption({ exclude: values['exclude-sitemap'] }, 'exclude-sitemap') : undefined;
+  return crawlSitemaps(args, {
+    http: httpFrom(values, io),
+    ...(maxDepth !== undefined ? { maxDepth } : {}),
+    ...(sitemapFilter ? { filterSitemap: (url: string) => sitemapFilter.test(url) } : {}),
+  });
 }
 
 function summaryLines(snapshot: Snapshot): string {
@@ -229,6 +260,7 @@ function summaryLines(snapshot: Snapshot): string {
     `Images: ${s.imageCount}, videos: ${s.videoCount}, news: ${s.newsCount}, hreflang links: ${s.alternateCount}`,
     `Downloaded: ${Math.round(s.bytes / 1024)} KiB uncompressed`,
   ];
+  if (s.filter) lines.push(`Filtered: ${s.filter.excludedUrls} URL(s) out of scope (${scopeText(s.filter)})`);
   for (const sm of snapshot.sitemaps) {
     lines.push(`  ${sm.status === 'ok' ? 'ok ' : sm.status === 'error' ? 'ERR' : 'skip'} ${sm.url}${sm.kind ? ` [${sm.kind}${sm.gzip ? ', gzip' : ''}]` : ''} ${sm.urlCount || sm.sitemapCount}${sm.error ? ` ${sm.error}` : ''}`);
   }
@@ -239,14 +271,19 @@ function summaryLines(snapshot: Snapshot): string {
   return `${lines.join('\n')}\n`;
 }
 
+function scopeText(f: { include: string[]; exclude: string[] }): string {
+  return [f.include.length ? `include ${f.include.join(', ')}` : '', f.exclude.length ? `exclude ${f.exclude.join(', ')}` : ''].filter(Boolean).join('; ');
+}
+
 async function writeSnapshotFile(path: string, snapshot: Snapshot): Promise<void> {
   const json = JSON.stringify(snapshot);
   await writeFile(path, path.endsWith('.gz') ? await gzipAsync(json) : `${json}\n`);
 }
 
 async function cmdFetch(args: string[], values: Values, io: CliIo): Promise<number> {
+  const filter = urlFilterFrom(values);
   const crawl = await crawlFromArgs(args, values, io);
-  const snapshot = createSnapshot(single(values) ?? originOf(args[0]!) ?? args[0]!, crawl);
+  const snapshot = createSnapshot(single(values) ?? originOf(args[0]!) ?? args[0]!, crawl, { filter });
   if (values.out) await writeSnapshotFile(values.out, snapshot);
   if (values.urls) for (const u of new Set(snapshot.urls.map((x) => x.loc))) io.stdout(`${u}\n`);
   else if (values.json) io.stdout(`${JSON.stringify({ stats: snapshot.stats, sitemaps: snapshot.sitemaps, warnings: snapshot.warnings }, null, 2)}\n`);
@@ -270,11 +307,16 @@ async function cmdParse(args: string[], values: Values, io: CliIo): Promise<numb
 async function cmdSnapshot(args: string[], values: Values, io: CliIo, logger: Logger, now: () => number): Promise<number> {
   const site = single(values);
   if (!site) throw new UsageError('snapshot needs --site <name>');
+  const filter = urlFilterFrom(values);
   const crawl = await crawlFromArgs(args, values, io);
-  const snapshot = createSnapshot(site, crawl);
+  const snapshot = createSnapshot(site, crawl, { filter });
   const store = await openStore(storeConfig(values.store), (m) => logger.warn(m));
   try {
-    const [previous] = await store.latest(site, 1);
+    let [previous] = await store.latest(site, 1);
+    if (previous && filterKey(previous.stats.filter) !== filterKey(snapshot.stats.filter)) {
+      logger.warn(`the URL filter differs from snapshot ${previous.id}; it is re-filtered for the diff, and URLs it left out may show as added`);
+      previous = filterSnapshot(previous, filter);
+    }
     await store.save(snapshot);
     io.stderr(summaryLines(snapshot));
     if (previous) {
@@ -291,6 +333,7 @@ async function cmdSnapshot(args: string[], values: Values, io: CliIo, logger: Lo
 }
 
 async function cmdDiff(args: string[], values: Values, io: CliIo, now: () => number): Promise<number> {
+  const filter = urlFilterFrom(values);
   let before: Snapshot;
   let after: Snapshot;
   let history: SnapshotMeta[] | undefined;
@@ -315,6 +358,10 @@ async function cmdDiff(args: string[], values: Values, io: CliIo, now: () => num
       await store.close();
     }
   } else throw new UsageError('diff takes --site <name> or exactly two snapshot files');
+  if (filter.active) {
+    before = filterSnapshot(before, filter);
+    after = filterSnapshot(after, filter);
+  }
   const diff = diffSnapshots(before, after);
   const report = buildReport({
     snapshot: after,
@@ -370,8 +417,9 @@ async function cmdValidate(args: string[], values: Values, io: CliIo, now: () =>
   const failOn = (values['fail-on'] ?? 'error') as Severity | 'none';
   if (!['error', 'warning', 'info', 'none'].includes(failOn)) throw new UsageError('--fail-on must be error, warning, info or none');
   const http = httpFrom(values, io);
+  const filter = urlFilterFrom(values);
   const crawl = await crawlFromArgs(args, values, io);
-  const snapshot = createSnapshot(originOf(args[0]!) ?? args[0]!, crawl);
+  const snapshot = createSnapshot(originOf(args[0]!) ?? args[0]!, crawl, { filter });
   const headMax = int(values['head-max'], 'head-max');
   const headRate = int(values['head-rate'], 'head-rate');
   const validation = await validateEntries(snapshot.urls, {
