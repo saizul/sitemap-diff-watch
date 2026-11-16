@@ -47,6 +47,9 @@
       "maxDepth": 2,
       "maxSitemaps": 200,
       "sectionDepth": 2,
+      "include": ["/products/**", "/blog/**"],
+      "exclude": ["/blog/tag/**", "re:[?&]utm_"],
+      "excludeSitemaps": ["/page-sitemap*.xml"],
       "validate": { "enabled": false },
       "alerts": { "rules": { "minAdded": 20, "minRemoved": 20, "onErrors": false } }
     }

@@ -60,7 +60,12 @@ export function renderMarkdown(report: WatchReport, options: MarkdownOptions = {
   if (s.newsCount) lines.push(`| News entries | ${formatNumber(s.newsCount)} |`);
   if (s.alternateCount) lines.push(`| hreflang links | ${formatNumber(s.alternateCount)} |`);
   lines.push(`| Downloaded (uncompressed) | ${formatNumber(Math.round(s.bytes / 1024))} KiB |`);
+  if (s.filter) lines.push(`| Out of scope (filtered) | ${formatNumber(s.filter.excludedUrls)} |`);
   lines.push('');
+  if (s.filter) {
+    const parts = [s.filter.include.length ? `include ${s.filter.include.map(code).join(', ')}` : '', s.filter.exclude.length ? `exclude ${s.filter.exclude.map(code).join(', ')}` : ''];
+    lines.push(`URL scope: ${parts.filter(Boolean).join('; ')}.`, '');
+  }
 
   const d = report.diff;
   if (d) {

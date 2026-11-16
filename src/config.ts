@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { AlertRules } from './alerts/rules.js';
 import { ConfigError, errorMessage } from './errors.js';
+import { compileUrlPattern } from './filter/url-filter.js';
 import { parseHttpUrl } from './util/url.js';
 
 export type ReportFormat = 'md' | 'html' | 'json' | 'rss';
@@ -57,6 +58,12 @@ export interface SiteConfig {
   maxSitemaps?: number;
   /** Directory depth for section growth (default 1). */
   sectionDepth?: number;
+  /** Only keep URLs matching one of these patterns (see `UrlFilterSpec`). */
+  include?: string[];
+  /** Drop URLs matching any of these patterns. */
+  exclude?: string[];
+  /** Do not download child sitemaps whose URL matches any of these patterns. */
+  excludeSitemaps?: string[];
   validate?: ValidateConfig;
   alerts?: AlertsConfig;
 }
@@ -143,6 +150,18 @@ export function validateConfig(raw: unknown): WatchConfig {
     if (!s.sitemaps?.length && !(typeof s.discover === 'string' && parseHttpUrl(s.discover))) fail(`${where} needs "sitemaps" or a "discover" URL`);
     s.alerts?.channels?.forEach((ch, j) => checkChannel(ch, `${where}.alerts.channels[${j}]`));
     if (s.sectionDepth !== undefined && (!Number.isInteger(s.sectionDepth) || s.sectionDepth < 1)) fail(`${where}.sectionDepth must be a positive integer`);
+    for (const key of ['include', 'exclude', 'excludeSitemaps'] as const) {
+      const list: unknown = s[key];
+      if (list === undefined) continue;
+      if (!Array.isArray(list) || list.some((p) => typeof p !== 'string')) fail(`${where}.${key} must be a list of strings`);
+      (list as string[]).forEach((p, j) => {
+        try {
+          compileUrlPattern(p);
+        } catch (error) {
+          fail(`${where}.${key}[${j}]: ${errorMessage(error)}`);
+        }
+      });
+    }
   });
   c.alerts?.channels?.forEach((ch, j) => checkChannel(ch, `alerts.channels[${j}]`));
   if (c.store?.type !== undefined && c.store.type !== 'json' && c.store.type !== 'sqlite') fail('store.type must be "json" or "sqlite"');

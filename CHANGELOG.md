@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- URL scope filters: `include` and `exclude` patterns per site (path, host and URL globs with `*` and `**`, or
+  `re:` regular expressions) that apply to snapshots, diffs, validation, reports and alerts, and `excludeSitemaps`
+  to skip child sitemaps of an index without downloading them.
+- `--include`, `--exclude` and `--exclude-sitemap` for `fetch`, `snapshot`, `diff` and `validate`.
+- `stats.filter` in snapshots (patterns and the number of URLs left out), shown in the Markdown and HTML reports
+  and in the `fetch` summary.
+- `compileUrlFilter()`, `compileUrlPattern()`, `filterCrawl()`, `filterSnapshot()` and a `filter` option for
+  `createSnapshot()` in the library API.
+
+### Changed
+
+- When a site's filter changes, older snapshots are re-filtered with the current scope before the diff, with a
+  warning, so narrowing the scope is not reported as a mass removal.
+- Invalid patterns fail config validation, or exit with code 2 on the command line.
+
 ## [0.1.0] - 2026-11-14
 
 First public release.

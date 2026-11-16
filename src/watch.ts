@@ -9,6 +9,7 @@ import { velocityFromHistory, velocityFromLastmod } from './diff/velocity.js';
 import { errorMessage } from './errors.js';
 import { crawlSitemaps } from './fetch/crawler.js';
 import { discoverSitemaps } from './fetch/discover.js';
+import { compileUrlFilter, filterKey, filterSnapshot } from './filter/url-filter.js';
 import type { HttpOptions } from './fetch/http.js';
 import { renderHtml } from './report/html.js';
 import { renderJson } from './report/json.js';
@@ -144,19 +145,32 @@ async function runSite(
     if (!roots.length) throw new Error(`no sitemap found for ${site.discover}`);
   }
 
+  const urlFilter = compileUrlFilter({ ...(site.include ? { include: site.include } : {}), ...(site.exclude ? { exclude: site.exclude } : {}) });
+  const sitemapFilter = compileUrlFilter(site.excludeSitemaps ? { exclude: site.excludeSitemaps } : {});
+
   logger.info(`${site.name}: fetching ${roots.join(', ')}`);
   const crawl = await crawlSitemaps(roots, {
     http,
     clock,
+    ...(sitemapFilter.active ? { filterSitemap: (url: string) => sitemapFilter.test(url) } : {}),
     ...(site.maxDepth !== undefined ? { maxDepth: site.maxDepth } : {}),
     ...(site.maxSitemaps !== undefined ? { maxSitemaps: site.maxSitemaps } : {}),
     ...(config.http?.concurrency !== undefined ? { concurrency: config.http.concurrency } : {}),
   });
-  const snapshot = createSnapshot(site.name, crawl);
-  logger.info(`${site.name}: ${snapshot.stats.uniqueUrlCount} URLs in ${snapshot.stats.sitemapCount} sitemap(s)`);
+  const snapshot = createSnapshot(site.name, crawl, { filter: urlFilter });
+  const excluded = snapshot.stats.filter?.excludedUrls;
+  logger.info(`${site.name}: ${snapshot.stats.uniqueUrlCount} URLs in ${snapshot.stats.sitemapCount} sitemap(s)${excluded ? ` (${excluded} out of scope)` : ''}`);
 
   const window = Math.max(2, config.historyWindow ?? 12);
-  const earlier = await store.latest(site.name, window - 1);
+  const scopeKey = filterKey(snapshot.stats.filter);
+  const stored = await store.latest(site.name, window - 1);
+  // Bring older snapshots into the current scope, so editing include/exclude does not read as
+  // a mass removal. URLs a wider scope now lets in still show up as added once.
+  const earlier = stored.map((s) => (filterKey(s.stats.filter) === scopeKey ? s : filterSnapshot(s, urlFilter)));
+  const lastStored = stored[stored.length - 1];
+  if (lastStored && filterKey(lastStored.stats.filter) !== scopeKey) {
+    logger.warn(`${site.name}: the URL filter changed since snapshot ${lastStored.id}; older snapshots are re-filtered for the diff, and URLs they left out may show as added`);
+  }
   const previous = earlier[earlier.length - 1];
   const diffOptions = { sections: { depth: site.sectionDepth ?? 1 } };
   const diff = previous ? diffSnapshots(previous, snapshot, diffOptions) : undefined;
